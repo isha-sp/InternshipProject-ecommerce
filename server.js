@@ -11,6 +11,9 @@ const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/users.routes');
 const cartRoutes = require('./routes/cart.routes');
 const orderRoutes = require('./routes/order.routes');
+const wishlistRoutes = require('./routes/wishlist.routes');
+
+const bannerRoutes = require('./routes/banner.routes');
 
 // Database connection
 const connectDB = require('./config/db');
@@ -33,6 +36,9 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/products', productRoutes);
 app.use('/api/v1/cart', cartRoutes);
 app.use('/api/v1/orders', orderRoutes);
+
+app.use('/api/v1/banners', bannerRoutes);
+app.use('/api/v1/wishlist', wishlistRoutes);
 
 // ErrorHandler Middleware
 app.use(errorHandler);

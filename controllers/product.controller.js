@@ -3,10 +3,13 @@ const asyncHandler = require('../middleware/async.middleware.js');
 const ErrorResponse = require('../utils/errorResponse.utils');
 
 // CREATE a new product
+
 exports.createProduct = asyncHandler(async (req, res) => {
   const productData = req.body;
+
+  // If Cloudinary upload is used via multer
   if (req.files?.length > 0) {
-    productData.images = req.files.map((x) => '/images/' + x.filename);
+    productData.images = req.files.map((file) => file.path); // file.path is the Cloudinary URL
   }
 
   const product = new Product(productData);
@@ -47,16 +50,31 @@ exports.getAllProducts = asyncHandler(async (req, res) => {
   }
 
   let sortOption = {};
-  if (sort === 'name_asc') {
-    sortOption.name = 1;
-  } else if (sort === 'name_desc') {
-    sortOption.name = -1;
-  } else if (sort === 'price_asc') {
-    sortOption.price = 1;
-  } else if (sort === 'price_desc') {
-    sortOption.price = -1;
-  } else if (sort === 'orders_desc') {
-    sortOption.orderCount = -1;
+
+  switch (sort) {
+    case 'name_asc':
+      sortOption.name = 1;
+      break;
+
+    case 'name_desc':
+      sortOption.name = -1;
+      break;
+
+    case 'price_asc':
+      sortOption.price = 1;
+      break;
+
+    case 'price_desc':
+      sortOption.price = -1;
+      break;
+
+    case 'orders_desc':
+      sortOption.orderCount = -1;
+      break;
+
+    default:
+      sortOption.createdAt = -1; // Default sort by newest
+      break;
   }
 
   const pageNumber = parseInt(page);
@@ -90,11 +108,12 @@ exports.getProductById = asyncHandler(async (req, res) => {
 });
 
 // UPDATE a product
-exports.updateProduct = asyncHandler(async (req, res) => {
+
+exports.updateProduct = asyncHandler(async (req, res, next) => {
   const productData = req.body;
 
   if (req.files?.length > 0) {
-    productData.images = req.files.map((x) => '/images/' + x.filename);
+    productData.images = req.files.map((file) => file.path); // Cloudinary image URLs
   }
 
   const updated = await Product.findByIdAndUpdate(req.params.id, productData, {

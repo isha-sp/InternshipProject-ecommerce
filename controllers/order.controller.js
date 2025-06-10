@@ -1,7 +1,10 @@
 const asyncHandler = require('../middleware/async.middleware');
 const Order = require('../models/Order.models');
 const Cart = require('../models/Cart.models');
+const Product = require('../models/Product.models');
 const { default: mongoose } = require('mongoose');
+const sendEmail = require('../utils/sendEmail.utils');
+const User = require('../models/User.models');
 
 // @desc    Place a new order
 // @route   POST /api/orders/checkout
@@ -25,6 +28,7 @@ exports.placeOrder = asyncHandler(async (req, res) => {
     0
   );
 
+  // Create the order
   const order = await Order.create({
     user: req.user._id,
     items,
@@ -33,13 +37,49 @@ exports.placeOrder = asyncHandler(async (req, res) => {
     totalAmount,
   });
 
-  // Clear the cart after successful order placement
+  const bulkOps = items.map((item) => ({
+    updateOne: {
+      filter: { _id: item.productId },
+      update: { $inc: { orderCount: item.quantity } },
+    },
+  }));
 
-  const cart = await Cart.findOne({ user: req.user._id });
-  if (cart) {
-    cart.items = [];
-    await cart.save();
+  if (bulkOps.length > 0) {
+    await Product.bulkWrite(bulkOps);
   }
+
+  // Clear the cart
+  await Cart.findOneAndUpdate(
+    { user: req.user._id },
+    { $set: { items: [] } },
+    { new: true }
+  );
+
+  const user = await User.findById(req.user._id);
+
+  const emailContent = `Hi ${user.name || 'Customer'},
+                        Thank you for your order! Your order has been placed successfully.
+                        Order Details:
+                        Order ID: ${order._id}
+                        Payment Method: ${paymentMethod}
+                        Total Amount: ₹${totalAmount.toFixed(2)}
+ 
+                        Shipping Address:
+                        ${shippingAddress.street}, ${shippingAddress.city}
+ 
+                        Items Ordered:
+                        ${items.map((item) => `- ${item.name} x ${item.quantity} (₹${item.price})`).join('\n')}
+ 
+                        We will notify you once your order is shipped.
+ 
+                        Thank you for shopping with us!
+                        `;
+
+  await sendEmail({
+    email: user.email,
+    subject: 'Order Confirmation - Your Order with Exclusive',
+    message: emailContent,
+  });
 
   res.status(201).json({
     success: true,
@@ -137,4 +177,74 @@ exports.getUserOrders = asyncHandler(async (req, res) => {
     limit,
     data: orders,
   });
+});
+
+
+
+// @desc    Get all orders (Admin)
+// @route   GET /api/orders
+// @access  Private/Admin
+exports.getAllOrders = asyncHandler(async (req, res) => {
+  const orders = await Order.find()
+    .populate('user', 'name email')
+    .sort({ createdAt: -1 });
+
+  res.status(200).json({
+    success: true,
+    count: orders.length,
+    data: orders,
+  });
+});
+
+// @desc    Update order status (Admin)
+// @route   PUT /api/orders/:id/status
+// @access  Private/Admin
+exports.updateOrderStatus = asyncHandler(async (req, res) => {
+  const { status } = req.body;
+  const order = await Order.findById(req.params.id).populate('user', 'name email');
+
+
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Order not found' });
+  }
+
+  order.status = status;
+  await order.save();
+
+  if (status === 'Delivered') {
+    const user = order.user;
+
+
+    const deliveryMessage = `Hi ${user.name || 'Customer'},
+
+      Your order (ID: ${order._id}) has been successfully delivered.
+
+      Thank you for shopping with us!
+
+      Regards,
+      ${process.env.FROM_NAME}`;
+
+    await sendEmail({
+      email: user.email,
+      subject: 'Order Delivered - Thank you for your purchase!',
+      message: deliveryMessage,
+    });
+
+
+  }
+
+
+  res.status(200).json({ success: true, message: 'Status updated', data: order });
+});
+
+// @desc    Delete an order (Admin)
+// @route   DELETE /api/orders/:id
+// @access  Private/Admin
+exports.deleteOrder = asyncHandler(async (req, res) => {
+  const order = await Order.findById(req.params.id);
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Order not found' });
+  }
+  await order.deleteOne();
+  res.status(200).json({ success: true, message: 'Order deleted' });
 });
